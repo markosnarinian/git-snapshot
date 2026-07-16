@@ -154,7 +154,10 @@ func captureTree(ctx context.Context, repo *Repository, git Git, includeUntracke
 	} else {
 		// Materialize split-index entries into the private index so later writes
 		// cannot create or update shared-index state in the common Git directory.
-		_, _ = indexGit.Run(ctx, "update-index", "--no-split-index")
+		if _, runErr := indexGit.Run(ctx, "update-index", "--no-split-index"); runErr != nil {
+			cleanup()
+			return "", func() {}, fail(ExitFailure, "could not materialize the private temporary index", "Disable split-index mode or repair the real index, then retry. The real index was not modified.", runErr)
+		}
 	}
 	addArgs := []string{"add"}
 	switch {

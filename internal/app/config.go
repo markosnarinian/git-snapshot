@@ -152,7 +152,7 @@ func LoadConfig(ctx context.Context, repoPath, explicitFile string) (Config, err
 	if err := cfg.applyEnvironment(); err != nil {
 		return cfg, err
 	}
-	if explicitRepo && os.Getenv("GIT_SNAPSHOT_REPO") == "" {
+	if explicitRepo {
 		cfg.RepoPath = repoPath
 		cfg.Values["snapshot.repo"] = ConfigValue{Value: repoPath, Origin: "cli-bootstrap"}
 	}

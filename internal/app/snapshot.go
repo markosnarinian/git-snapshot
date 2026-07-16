@@ -24,6 +24,7 @@ type Snapshot struct {
 	Ref       string    `json:"ref"`
 	Base      string    `json:"base"`
 	CreatedAt time.Time `json:"createdAt"`
+	Distance  int       `json:"distance"`
 	Size      int64     `json:"size,omitempty"`
 }
 
@@ -154,6 +155,7 @@ func VerifyStream(ctx context.Context, repo *Repository, git Git, ref string) (*
 		if err := requireObjectType(ctx, git, snapshot.Tree, "tree"); err != nil {
 			return nil, err
 		}
+		snapshot.Distance = len(stream.Snapshots)
 		stream.Snapshots = append(stream.Snapshots, snapshot)
 		if len(snapshot.Parents) == 0 {
 			if stream.Base != "unborn" {

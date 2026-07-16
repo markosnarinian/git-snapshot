@@ -177,6 +177,18 @@ func (a *App) flagSet(command string, cfg Config) (*flag.FlagSet, *commonFlags) 
 }
 
 func (a *App) prepare(ctx context.Context, c *commonFlags) (*Repository, Git, error) {
+	if c.outputFormat != "human" && c.outputFormat != "json" {
+		return nil, Git{}, fail(ExitUsage, "invalid --output-format", "Use human or json.", nil)
+	}
+	if c.color != "auto" && c.color != "always" && c.color != "never" {
+		return nil, Git{}, fail(ExitUsage, "invalid --color value", "Use auto, always, or never.", nil)
+	}
+	if c.retention < 0 {
+		return nil, Git{}, fail(ExitUsage, "invalid --retention value", "Use a non-negative integer.", nil)
+	}
+	if c.lockTimeout < 0 {
+		return nil, Git{}, fail(ExitUsage, "invalid --lock-timeout value", "Use a non-negative duration such as 5s.", nil)
+	}
 	repo, err := DiscoverRepository(ctx, c.repo, c.verbose, a.Err)
 	if err != nil {
 		return nil, Git{}, err
@@ -214,6 +226,12 @@ func (a *App) runCreate(ctx context.Context, args []string) error {
 				return err
 			}
 		}
+	}
+	if allowInProgress {
+		fmt.Fprintln(a.Err, "WARNING: --allow-in-progress captures conflict markers and transient operation state only as ordinary file content; Git operation metadata is not snapshotted.")
+	}
+	if allowDirtySubmodules {
+		fmt.Fprintln(a.Err, "WARNING: --allow-dirty-submodules records only each submodule gitlink commit, not modified or untracked submodule files.")
 	}
 	repo, git, err := a.prepare(ctx, common)
 	if err != nil {
@@ -281,8 +299,8 @@ func (a *App) runList(ctx context.Context, args []string) error {
 	if showBase {
 		fmt.Fprintf(a.Out, "base %s\n", stream.Base)
 	}
-	for i, snapshot := range stream.Snapshots {
-		line := FormatSnapshot(format, snapshot, i)
+	for _, snapshot := range stream.Snapshots {
+		line := FormatSnapshot(format, snapshot, snapshot.Distance)
 		if showSize {
 			line += fmt.Sprintf(" %d bytes", snapshot.Size)
 		}
@@ -333,9 +351,13 @@ func (a *App) runShow(ctx context.Context, args []string) error {
 		return writeJSON(a.Out, map[string]any{"snapshot": snapshot, "diff": diff})
 	}
 	if format != "" {
-		fmt.Fprintln(a.Out, FormatSnapshot(format, snapshot, 0))
+		fmt.Fprintln(a.Out, FormatSnapshot(format, snapshot, snapshot.Distance))
 	} else {
-		fmt.Fprintf(a.Out, "snapshot %s\nref %s\nbase %s\ntree %s\ncreated %s\nsubject %s\n", snapshot.OID, snapshot.Ref, snapshot.Base, snapshot.Tree, snapshot.CreatedAt.Format(time.RFC3339), snapshot.Subject)
+		parent := "none"
+		if len(snapshot.Parents) > 0 {
+			parent = snapshot.Parents[0]
+		}
+		fmt.Fprintf(a.Out, "snapshot %s\nversion %s\nref %s\nbase %s\ntree %s\nparent %s\ncreated %s\nsubject %s\n", snapshot.OID, snapshot.Version, snapshot.Ref, snapshot.Base, snapshot.Tree, parent, snapshot.CreatedAt.Format(time.RFC3339), snapshot.Subject)
 	}
 	if diff != "" {
 		fmt.Fprint(a.Out, diff)
@@ -517,8 +539,12 @@ func (a *App) runDrop(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if count > len(stream.Snapshots) {
-		return fail(ExitUsage, "drop count exceeds stream length", fmt.Sprintf("Choose --count between 1 and %d.", len(stream.Snapshots)), nil)
+	if count >= len(stream.Snapshots) {
+		hint := "Use delete to remove this complete stream."
+		if len(stream.Snapshots) > 1 {
+			hint = fmt.Sprintf("Choose --count between 1 and %d, or use delete for the complete stream.", len(stream.Snapshots)-1)
+		}
+		return fail(ExitSafety, "drop would empty the snapshot stream", hint, nil)
 	}
 	fmt.Fprintf(a.Err, "Snapshots that may become unreachable:\n")
 	for _, snapshot := range stream.Snapshots[:count] {
@@ -536,11 +562,7 @@ func (a *App) runDrop(ctx context.Context, args []string) error {
 	if common.json || common.outputFormat == "json" {
 		return writeJSON(a.Out, result)
 	}
-	if result.Deleted {
-		fmt.Fprintf(a.Out, "Dropped %d snapshots and deleted empty stream %s\n", count, common.ref)
-	} else {
-		fmt.Fprintf(a.Out, "Moved %s to %s\n", common.ref, result.NewTip)
-	}
+	fmt.Fprintf(a.Out, "Moved %s to %s\n", common.ref, result.NewTip)
 	return nil
 }
 

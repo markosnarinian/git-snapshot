@@ -10,7 +10,6 @@ type DropResult struct {
 	Ref     string      `json:"ref"`
 	OldTip  string      `json:"oldTip"`
 	NewTip  string      `json:"newTip,omitempty"`
-	Deleted bool        `json:"deleted"`
 	Removed []*Snapshot `json:"removed"`
 }
 
@@ -31,17 +30,10 @@ func Drop(ctx context.Context, repo *Repository, git Git, ref, namespace, expect
 	if expectedTip == "" || stream.Tip != expectedTip {
 		return nil, fail(ExitConcurrent, fmt.Sprintf("snapshot ref %q changed after the drop preview", ref), "Review the updated stream and confirm again; no ref was changed.", nil)
 	}
-	if count > len(stream.Snapshots) {
-		return nil, fail(ExitUsage, fmt.Sprintf("cannot drop %d snapshots from a stream containing %d", count, len(stream.Snapshots)), "Reduce --count or delete the complete stream.", nil)
+	if count >= len(stream.Snapshots) {
+		return nil, fail(ExitSafety, fmt.Sprintf("dropping %d snapshots would empty this %d-snapshot stream", count, len(stream.Snapshots)), "Use delete to remove the complete stream; drop always leaves a CLI-owned snapshot tip and writes a reflog entry.", nil)
 	}
 	result := &DropResult{Ref: ref, OldTip: stream.Tip, Removed: stream.Snapshots[:count]}
-	if count == len(stream.Snapshots) {
-		if err := deleteRefCAS(ctx, git, ref, stream.Tip, lockTimeout, fmt.Sprintf("git-snapshot: drop %d (delete empty stream)", count)); err != nil {
-			return nil, err
-		}
-		result.Deleted = true
-		return result, nil
-	}
 	result.NewTip = stream.Snapshots[count].OID
 	if err := updateRefCAS(ctx, git, ref, result.NewTip, stream.Tip, createReflog, lockTimeout, fmt.Sprintf("git-snapshot: drop %d", count)); err != nil {
 		return nil, err
