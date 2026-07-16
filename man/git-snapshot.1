@@ -1,0 +1,114 @@
+.TH GIT-SNAPSHOT 1 "July 16, 2026" "git-snapshot" "User Commands"
+.SH NAME
+git-snapshot \- capture working-tree snapshots outside branch history
+.SH SYNOPSIS
+.B git-snapshot
+.I command
+.RI [ options ]
+.br
+.B git snapshot
+.I command
+.RI [ options ]
+.SH DESCRIPTION
+.B git-snapshot
+stores working-tree states as a verified linear commit stream under a dedicated
+ref (default
+.BR refs/snapshots/default ).
+It uses a private temporary index and does not change HEAD, branches, the real
+index, or the working tree during capture.
+.SH COMMANDS
+.TP
+.B create
+Capture the worktree. Options: \fB--message\fR, \fB--message-file\fR,
+\fB--allow-in-progress\fR, \fB--allow-dirty-submodules\fR, and
+\fB--dry-run\fR.
+.TP
+.B list
+List newest first. Options: \fB--limit\fR, \fB--reverse\fR,
+\fB--format\fR, \fB--show-ref\fR, \fB--show-base\fR, and
+\fB--show-size\fR.
+.TP
+.B show [selector]
+Show metadata and optionally \fB--stat\fR, \fB--name-only\fR, or
+\fB--patch\fR. Also: \fB--format\fR and \fB--allow-unreachable\fR.
+.TP
+.B diff [from] [to]
+Compare snapshots; destination may be HEAD or worktree. Output options are
+\fB--stat\fR, \fB--name-only\fR, or \fB--patch\fR (default).
+.TP
+.B verify [selector]
+Verify one snapshot or the complete stream.
+.TP
+.B restore [selector]
+Restore safely with \fB--destination\fR, or explicitly use
+\fB--worktree\fR. Options: \fB--overwrite\fR, \fB--force\fR,
+\fB--staged\fR, \fB--dry-run\fR, and \fB--allow-unreachable\fR.
+.TP
+.B drop
+After confirmation, move back by \fB--count\fR (default 1) while leaving at
+least one snapshot. Use delete to remove a complete stream.
+.TP
+.B delete
+After confirmation, delete the exact selected stream ref.
+.TP
+.B config get|set|unset|list
+Read or write known snapshot keys. Scopes: \fB--global\fR,
+\fB--local\fR, and \fB--file\fR. Other options: \fB--repo\fR,
+\fB--effective\fR, \fB--show-origin\fR, and \fB--json\fR.
+.TP
+.B help, version, --version
+Display help or version.
+.SH SELECTORS
+Selectors are \fBlatest\fR, a non-negative first-parent distance (0 is
+newest), or a full SHA-1/SHA-256 object ID. Full IDs outside the stream require
+\fB--allow-unreachable\fR where offered and must still be CLI-owned for the
+selected ref.
+.SH COMMON OPTIONS
+Commands except config accept \fB--repo\fR, \fB--ref\fR,
+\fB--namespace\fR, \fB--base\fR, \fB--include-untracked\fR,
+\fB--no-include-untracked\fR, \fB--include-ignored\fR,
+\fB--no-include-ignored\fR, \fB--create-reflog\fR,
+\fB--no-create-reflog\fR, \fB--message-template\fR, \fB--sign\fR,
+\fB--no-sign\fR, \fB--signing-key\fR, \fB--output-format\fR,
+\fB--color\fR, \fB--yes\fR, \fB--restore-destination\fR,
+\fB--retention\fR, \fB--lock-timeout\fR, \fB--config-file\fR,
+\fB--json\fR, \fB--quiet\fR, and \fB--verbose\fR.
+.SH CONFIGURATION
+Precedence from low to high: defaults, explicit file, global Git config, local
+Git config, environment, command-line flags. The explicit file
+(\fB--config-file\fR or \fBGIT_SNAPSHOT_CONFIG_FILE\fR) is intentionally the
+lowest configuration layer.
+.PP
+Keys and defaults: snapshot.repo (.), snapshot.ref (refs/snapshots/default),
+snapshot.namespace (refs/snapshots/), snapshot.base (HEAD),
+snapshot.includeUntracked (true), snapshot.includeIgnored (false),
+snapshot.createReflog (true), snapshot.messageTemplate
+(git-snapshot: {createdAt}), snapshot.sign (false), snapshot.signingKey (empty),
+snapshot.outputFormat (human), snapshot.color (auto), snapshot.yes (false),
+snapshot.restoreDestination (empty), snapshot.retention (0),
+snapshot.lockTimeout (5s), and snapshot.defaultCommand (create).
+.PP
+Environment names are \fBGIT_SNAPSHOT_\fR followed by REPO, REF, NAMESPACE,
+BASE, INCLUDE_UNTRACKED, INCLUDE_IGNORED, CREATE_REFLOG, MESSAGE_TEMPLATE, SIGN,
+SIGNING_KEY, OUTPUT_FORMAT, COLOR, YES, RESTORE_DESTINATION, RETENTION,
+LOCK_TIMEOUT, or DEFAULT_COMMAND.
+.SH SAFETY
+Ignored files are excluded by default. Including them warns and confirms because
+secrets may persist in Git objects. Dry-run capture may write blobs and trees,
+but no commit or ref. Retention is a maximum length: create refuses at the
+limit and never automatically rewrites history. Ref updates use
+expected-old-value compare-and-swap. Worktree restore previews, requires force
+when destructive, and can be partially applied on filesystem failure.
+.SH EXIT STATUS
+0 success; 1 operational failure; 2 usage/configuration; 3 safety refusal;
+4 not found; 5 concurrency/lock; 6 verification failure.
+.SH FILES
+.I completions/git-snapshot.bash
+.br
+.I completions/_git-snapshot
+.br
+.I completions/git-snapshot.fish
+.SH SEE ALSO
+.BR git (1),
+.BR git-update-ref (1),
+.BR git-commit-tree (1)

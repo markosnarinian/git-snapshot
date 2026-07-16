@@ -1,0 +1,25 @@
+#compdef git-snapshot
+
+local -a commands common
+commands=(create list show diff verify restore drop delete config help version)
+common=(
+  '--repo[repository path]:directory:_directories' '--ref[full snapshot ref]:ref:' '--namespace[permitted ref prefix]:namespace:'
+  '--base[base revision]:revision:' '--include-untracked' '--no-include-untracked' '--include-ignored' '--no-include-ignored'
+  '--create-reflog' '--no-create-reflog' '--message-template[message template]:template:' '--sign' '--no-sign'
+  '--signing-key[signing key]:key:' '--output-format[output format]:format:(human json)' '--color[color mode]:color:(auto always never)'
+  '--yes' '--restore-destination[restore destination]:directory:_directories' '--retention[maximum stream length]:count:'
+  '--lock-timeout[lock timeout]:duration:' '--config-file[explicit config file]:file:_files' '--json' '--quiet' '--verbose' '--help'
+)
+if (( CURRENT == 2 )); then _describe command commands; return; fi
+local cmd=$words[2]
+case $cmd in
+  create) _arguments $common '--message[commit message]:message:' '--message-file[message file]:file:_files' '--allow-in-progress' '--allow-dirty-submodules' '--dry-run' ;;
+  list) _arguments $common '--limit[maximum results]:count:' '--reverse' '--format[display format]:format:' '--show-ref' '--show-base' '--show-size' ;;
+  show) _arguments $common '--stat' '--name-only' '--patch' '--format[metadata format]:format:' '--allow-unreachable' '1:selector:(latest)' ;;
+  diff) _arguments $common '--stat' '--name-only' '--patch' '--allow-unreachable' '1:from:(latest)' '2:to:(latest HEAD worktree)' ;;
+  verify) _arguments $common '--allow-unreachable' '1:selector:(latest)' ;;
+  restore) _arguments $common '--destination[destination]:directory:_directories' '--worktree' '--overwrite' '--force' '--staged' '--dry-run' '--allow-unreachable' '1:selector:(latest)' ;;
+  drop) _arguments $common '--count[number to drop]:count:' ;;
+  delete) _arguments $common ;;
+  config) _arguments '1:action:(get set unset list)' '--repo[repository path]:directory:_directories' '--file[config file]:file:_files' '--global' '--local' '--effective' '--show-origin' '--json' '--help' ;;
+esac
