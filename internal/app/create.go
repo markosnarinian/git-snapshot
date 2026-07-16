@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -26,6 +27,7 @@ type CreateOptions struct {
 	SigningKey           string
 	CreateReflog         bool
 	DryRun               bool
+	Retention            int
 	LockTimeout          time.Duration
 }
 
@@ -53,6 +55,9 @@ func Create(ctx context.Context, repo *Repository, git Git, opts CreateOptions) 
 		stream, verifyErr := VerifyStream(ctx, repo, git, opts.Ref)
 		if verifyErr != nil {
 			return nil, verifyErr
+		}
+		if opts.Retention > 0 && len(stream.Snapshots) >= opts.Retention {
+			return nil, fail(ExitSafety, fmt.Sprintf("snapshot retention limit of %d has been reached", opts.Retention), "Drop or delete snapshots explicitly, or increase --retention. Automatic history rewriting is intentionally not performed.", nil)
 		}
 		parent = tip
 		base = stream.Base
@@ -165,12 +170,53 @@ func captureTree(ctx context.Context, repo *Repository, git Git, includeUntracke
 		cleanup()
 		return "", func() {}, fail(ExitFailure, "could not populate the temporary index", "Check file permissions, conflicts, and submodule state. The real index and working tree were not changed.", err)
 	}
+	newGitlinks, err := newIndexGitlinks(ctx, git, indexGit)
+	if err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	if len(newGitlinks) > 0 {
+		cleanup()
+		return "", func() {}, fail(ExitSafety, fmt.Sprintf("untracked embedded Git repositories cannot be captured safely: %s", strings.Join(newGitlinks, ", ")), "Register them as submodules, snapshot them separately, or exclude them before retrying.", nil)
+	}
 	tree, err := indexGit.Run(ctx, "write-tree")
 	if err != nil {
 		cleanup()
 		return "", func() {}, fail(ExitFailure, "could not write the snapshot tree", "Run git fsck and verify repository permissions. The snapshot ref was not changed.", err)
 	}
 	return tree, cleanup, nil
+}
+
+func newIndexGitlinks(ctx context.Context, realGit, temporaryGit Git) ([]string, error) {
+	realData, err := realGit.RunBytes(ctx, "ls-files", "--stage", "-z")
+	if err != nil {
+		return nil, fail(ExitFailure, "could not inspect real-index gitlinks", "Run git ls-files --stage and retry. The real index was not modified.", err)
+	}
+	temporaryData, err := temporaryGit.RunBytes(ctx, "ls-files", "--stage", "-z")
+	if err != nil {
+		return nil, fail(ExitFailure, "could not inspect temporary-index gitlinks", "Check the temporary filesystem and retry.", err)
+	}
+	realLinks := parseGitlinks(realData)
+	temporaryLinks := parseGitlinks(temporaryData)
+	var added []string
+	for path := range temporaryLinks {
+		if !realLinks[path] {
+			added = append(added, path)
+		}
+	}
+	sort.Strings(added)
+	return added, nil
+}
+
+func parseGitlinks(data []byte) map[string]bool {
+	links := make(map[string]bool)
+	for _, record := range splitNUL(data) {
+		metadata, path, found := strings.Cut(record, "\t")
+		if found && strings.HasPrefix(metadata, "160000 ") && strings.HasSuffix(metadata, " 0") {
+			links[path] = true
+		}
+	}
+	return links
 }
 
 func copyFile(source, destination string, mode os.FileMode) error {

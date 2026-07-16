@@ -14,7 +14,7 @@ type DropResult struct {
 	Removed []*Snapshot `json:"removed"`
 }
 
-func Drop(ctx context.Context, repo *Repository, git Git, ref, namespace string, count int, lockTimeout time.Duration, createReflog bool) (*DropResult, error) {
+func Drop(ctx context.Context, repo *Repository, git Git, ref, namespace, expectedTip string, count int, lockTimeout time.Duration, createReflog bool) (*DropResult, error) {
 	if count < 1 {
 		return nil, fail(ExitUsage, "drop count must be at least 1", "Pass --count with a positive integer.", nil)
 	}
@@ -27,6 +27,9 @@ func Drop(ctx context.Context, repo *Repository, git Git, ref, namespace string,
 	stream, err := VerifyStream(ctx, repo, git, ref)
 	if err != nil {
 		return nil, err
+	}
+	if expectedTip == "" || stream.Tip != expectedTip {
+		return nil, fail(ExitConcurrent, fmt.Sprintf("snapshot ref %q changed after the drop preview", ref), "Review the updated stream and confirm again; no ref was changed.", nil)
 	}
 	if count > len(stream.Snapshots) {
 		return nil, fail(ExitUsage, fmt.Sprintf("cannot drop %d snapshots from a stream containing %d", count, len(stream.Snapshots)), "Reduce --count or delete the complete stream.", nil)
@@ -52,7 +55,7 @@ type DeleteResult struct {
 	Removed []*Snapshot `json:"removed"`
 }
 
-func Delete(ctx context.Context, repo *Repository, git Git, ref, namespace string, lockTimeout time.Duration) (*DeleteResult, error) {
+func Delete(ctx context.Context, repo *Repository, git Git, ref, namespace, expectedTip string, lockTimeout time.Duration) (*DeleteResult, error) {
 	if err := ValidateSnapshotRef(ctx, git, ref, namespace); err != nil {
 		return nil, err
 	}
@@ -62,6 +65,9 @@ func Delete(ctx context.Context, repo *Repository, git Git, ref, namespace strin
 	stream, err := VerifyStream(ctx, repo, git, ref)
 	if err != nil {
 		return nil, err
+	}
+	if expectedTip == "" || stream.Tip != expectedTip {
+		return nil, fail(ExitConcurrent, fmt.Sprintf("snapshot ref %q changed after the delete preview", ref), "Review the updated stream and confirm again; no ref was changed.", nil)
 	}
 	if err := deleteRefCAS(ctx, git, ref, stream.Tip, lockTimeout, "git-snapshot: delete stream"); err != nil {
 		return nil, err

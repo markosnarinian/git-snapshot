@@ -117,6 +117,7 @@ func (c *Config) recordDefaults() {
 // global config, repository-local config, and environment variables.
 func LoadConfig(ctx context.Context, repoPath, explicitFile string) (Config, error) {
 	cfg := Defaults()
+	explicitRepo := repoPath != ""
 	if explicitFile != "" {
 		values, err := readGitConfig(ctx, Git{}, []string{"config", "--file", explicitFile, "--null", "--list"})
 		if err != nil {
@@ -138,17 +139,20 @@ func LoadConfig(ctx context.Context, repoPath, explicitFile string) (Config, err
 		repoPath = cfg.RepoPath
 	}
 	if repoPath != "" {
-		local, localErr := readGitConfig(ctx, Git{Repo: repoPath}, []string{"config", "--local", "--null", "--list"})
+		localGit := Git{Repo: repoPath}
+		local, localErr := readGitConfig(ctx, localGit, []string{"config", "--local", "--null", "--list"})
 		if localErr == nil {
 			if err := cfg.apply(local, "local"); err != nil {
 				return cfg, err
 			}
+		} else if _, repoErr := localGit.Run(ctx, "rev-parse", "--git-dir"); repoErr == nil {
+			return cfg, fail(ExitUsage, "could not read repository-local Git configuration", "Repair the local Git configuration and retry.", localErr)
 		}
 	}
 	if err := cfg.applyEnvironment(); err != nil {
 		return cfg, err
 	}
-	if repoPath != "" && os.Getenv("GIT_SNAPSHOT_REPO") == "" {
+	if explicitRepo && os.Getenv("GIT_SNAPSHOT_REPO") == "" {
 		cfg.RepoPath = repoPath
 		cfg.Values["snapshot.repo"] = ConfigValue{Value: repoPath, Origin: "cli-bootstrap"}
 	}

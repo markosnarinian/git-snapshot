@@ -39,6 +39,10 @@ func fail(code int, message, hint string, cause error) error {
 	return &ExitError{Code: code, Message: message, Hint: hint, Cause: cause}
 }
 
+func failChanged(code int, message, hint string, cause error) error {
+	return &ExitError{Code: code, Message: message, Hint: hint, Changed: true, Cause: cause}
+}
+
 func ExitCode(err error) int {
 	if err == nil {
 		return ExitOK
@@ -66,7 +70,11 @@ func WriteError(w io.Writer, err error, asJSON bool) {
 		return
 	}
 	fmt.Fprintf(w, "git-snapshot: %s\n", ee.Error())
-	fmt.Fprintf(w, "Nothing was changed.\n")
+	if ee.Changed {
+		fmt.Fprintf(w, "The destination or working tree may have changed before the failure.\n")
+	} else {
+		fmt.Fprintf(w, "Nothing was changed.\n")
+	}
 	if ee.Hint != "" {
 		fmt.Fprintf(w, "Next: %s\n", ee.Hint)
 	}

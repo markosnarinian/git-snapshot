@@ -1,7 +1,6 @@
 package app
 
 import (
-	"archive/tar"
 	"bytes"
 	"context"
 	"errors"
@@ -57,10 +56,11 @@ func restoreDestination(ctx context.Context, repo *Repository, git Git, snapshot
 	if err != nil {
 		return nil, err
 	}
-	entries, err := listArchive(ctx, git, snapshot.OID)
+	treeEntries, err := listTreeEntries(ctx, git, snapshot.OID)
 	if err != nil {
 		return nil, err
 	}
+	entries := sortedTreePaths(treeEntries)
 	result := &RestoreResult{OID: snapshot.OID, Destination: destination, DryRun: opts.DryRun, Paths: entries}
 	if opts.DryRun {
 		return result, nil
@@ -77,7 +77,7 @@ func restoreDestination(ctx context.Context, repo *Repository, git Git, snapshot
 	if err := os.Chmod(stage, 0o700); err != nil {
 		return nil, fail(ExitFailure, "could not restrict restore staging permissions", "Use a filesystem supporting private directory permissions.", err)
 	}
-	if err := extractArchive(ctx, git, snapshot.OID, stage); err != nil {
+	if err := extractTree(ctx, git, snapshot.OID, stage); err != nil {
 		return nil, err
 	}
 	info, statErr := os.Stat(destination)
@@ -94,7 +94,7 @@ func restoreDestination(ctx context.Context, repo *Repository, git Git, snapshot
 		return nil, fail(ExitSafety, "restore destination is not a directory", "Choose a new directory path.", nil)
 	}
 	if err := copyTree(stage, destination); err != nil {
-		return nil, fail(ExitFailure, "could not copy all restored files into the destination", "Inspect the destination; files copied before the filesystem error may have changed.", err)
+		return nil, failChanged(ExitFailure, "could not copy all restored files into the destination", "Inspect the destination; files copied before the filesystem error may have changed.", err)
 	}
 	return result, nil
 }
@@ -151,91 +151,26 @@ func pathWithin(path, root string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-func listArchive(ctx context.Context, git Git, oid string) ([]string, error) {
-	var paths []string
-	err := walkArchive(ctx, git, oid, func(header *tar.Header, _ io.Reader) error {
-		paths = append(paths, filepath.ToSlash(strings.TrimSuffix(header.Name, "/")))
-		return nil
-	})
+func extractTree(ctx context.Context, git Git, oid, destination string) error {
+	tempDir, err := os.MkdirTemp("", "git-snapshot-restore-index-")
 	if err != nil {
-		return nil, err
+		return fail(ExitFailure, "could not create a temporary restore index", "Check temporary-directory permissions and free space.", err)
 	}
-	return paths, nil
-}
-
-func extractArchive(ctx context.Context, git Git, oid, destination string) error {
-	return walkArchive(ctx, git, oid, func(header *tar.Header, body io.Reader) error {
-		name := filepath.FromSlash(strings.TrimSuffix(header.Name, "/"))
-		target, err := secureArchivePath(destination, name)
-		if err != nil {
-			return err
-		}
-		switch header.Typeflag {
-		case tar.TypeDir:
-			return os.MkdirAll(target, 0o755)
-		case tar.TypeReg, tar.TypeRegA:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
-			}
-			if err := removeNonRegular(target); err != nil {
-				return err
-			}
-			file, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(header.Mode)&0o777)
-			if err != nil {
-				return err
-			}
-			_, copyErr := io.Copy(file, body)
-			closeErr := file.Close()
-			if copyErr != nil {
-				return copyErr
-			}
-			return closeErr
-		case tar.TypeSymlink:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
-			}
-			if err := os.RemoveAll(target); err != nil {
-				return err
-			}
-			return os.Symlink(header.Linkname, target)
-		default:
-			return fmt.Errorf("unsupported archive entry type %d for %s", header.Typeflag, header.Name)
-		}
+	defer os.RemoveAll(tempDir)
+	if err := os.Chmod(tempDir, 0o700); err != nil {
+		return fail(ExitFailure, "could not restrict temporary restore-index permissions", "Use a temporary filesystem supporting private permissions.", err)
+	}
+	indexPath := filepath.Join(tempDir, "index")
+	indexGit := git.WithEnv(map[string]string{
+		"GIT_INDEX_FILE": indexPath,
+		"GIT_WORK_TREE":  destination,
 	})
-}
-
-func walkArchive(ctx context.Context, git Git, oid string, visit func(*tar.Header, io.Reader) error) error {
-	var stderr bytes.Buffer
-	cmd := git.command(ctx, nil, nil, &stderr, "archive", "--format=tar", oid)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fail(ExitFailure, "could not open the snapshot archive stream", "Check process resources and retry.", err)
+	if _, err := indexGit.Run(ctx, "read-tree", oid); err != nil {
+		return fail(ExitVerification, "could not load the snapshot tree into a temporary index", "Run git fsck and verify the snapshot objects.", err)
 	}
-	if err := cmd.Start(); err != nil {
-		return fail(ExitFailure, "could not start git archive", "Verify Git is installed and the snapshot object exists.", err)
-	}
-	reader := tar.NewReader(stdout)
-	for {
-		header, nextErr := reader.Next()
-		if errors.Is(nextErr, io.EOF) {
-			break
-		}
-		if nextErr != nil {
-			_ = cmd.Process.Kill()
-			_ = cmd.Wait()
-			return fail(ExitVerification, "snapshot archive is malformed", "Run git fsck to inspect the object database.", nextErr)
-		}
-		if header.Typeflag == tar.TypeXHeader || header.Typeflag == tar.TypeXGlobalHeader {
-			continue
-		}
-		if err := visit(header, reader); err != nil {
-			_ = cmd.Process.Kill()
-			_ = cmd.Wait()
-			return fail(ExitFailure, fmt.Sprintf("could not restore archive entry %q", header.Name), "Check destination permissions and filesystem capabilities.", err)
-		}
-	}
-	if err := cmd.Wait(); err != nil {
-		return fail(ExitFailure, "git archive failed", "Verify the snapshot commit and tree objects.", makeGitError([]string{"archive", "--format=tar", oid}, stderr.String(), err))
+	prefix := destination + string(filepath.Separator)
+	if _, err := indexGit.Run(ctx, "checkout-index", "--all", "--force", "--prefix="+prefix); err != nil {
+		return fail(ExitFailure, "could not materialize the snapshot tree", "Check destination permissions and filesystem capabilities.", err)
 	}
 	return nil
 }
@@ -340,6 +275,10 @@ func restoreWorktree(ctx context.Context, repo *Repository, git Git, snapshot *S
 	if err := repo.CheckLocks(snapshot.Ref, true); err != nil {
 		return nil, err
 	}
+	target, err := listTreeEntries(ctx, git, snapshot.OID)
+	if err != nil {
+		return nil, err
+	}
 	status, err := git.RunBytes(ctx, "status", "--porcelain=v2", "-z", "--untracked-files=all", "--ignore-submodules=none")
 	if err != nil {
 		return nil, fail(ExitFailure, "could not inspect current working-tree changes", "Run git status and retry.", err)
@@ -349,13 +288,18 @@ func restoreWorktree(ctx context.Context, repo *Repository, git Git, snapshot *S
 	if err != nil {
 		return nil, err
 	}
-	if (len(status) > 0 || len(active) > 0 || conflicts) && !opts.Force {
+	ignoredCollisions, err := ignoredTargetCollisions(ctx, repo, git, target)
+	if err != nil {
+		return nil, err
+	}
+	if (len(status) > 0 || len(active) > 0 || conflicts || len(ignoredCollisions) > 0) && !opts.Force {
 		return nil, fail(ExitSafety, "working-tree restore could overwrite current data", "Review the dry-run preview, then pass --force and confirm only if the current data may be discarded.", nil)
 	}
 	paths, err := previewWorktreeRestore(ctx, git, snapshot.OID)
 	if err != nil {
 		return nil, err
 	}
+	paths = mergePaths(paths, ignoredCollisions)
 	result := &RestoreResult{OID: snapshot.OID, Destination: repo.TopLevel, Worktree: true, Staged: opts.Staged, DryRun: opts.DryRun, Paths: paths}
 	if opts.DryRun {
 		return result, nil
@@ -368,11 +312,7 @@ func restoreWorktree(ctx context.Context, repo *Repository, git Git, snapshot *S
 	if err := os.Chmod(stage, 0o700); err != nil {
 		return nil, fail(ExitFailure, "could not restrict restore staging permissions", "Use a temporary filesystem supporting private permissions.", err)
 	}
-	if err := extractArchive(ctx, git, snapshot.OID, stage); err != nil {
-		return nil, err
-	}
-	target, err := listTreeEntries(ctx, git, snapshot.OID)
-	if err != nil {
+	if err := extractTree(ctx, git, snapshot.OID, stage); err != nil {
 		return nil, err
 	}
 	trackedData, err := git.RunBytes(ctx, "ls-files", "-z")
@@ -395,16 +335,31 @@ func restoreWorktree(ctx context.Context, repo *Repository, git Git, snapshot *S
 		if joinErr != nil {
 			return nil, fail(ExitSafety, "refused an unsafe working-tree deletion path", "Inspect repository path names with git ls-files.", joinErr)
 		}
-		if err := os.RemoveAll(targetPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, fail(ExitFailure, fmt.Sprintf("could not remove %q during restore", path), "Inspect the working tree; earlier paths may already have changed.", err)
+		if containsRepositoryMetadata(ctx, targetPath) {
+			return nil, fail(ExitSafety, fmt.Sprintf("refused to delete nested repository %q", path), "Move or back up the nested repository before restoring the working tree.", nil)
 		}
 	}
-	if err := copyTree(stage, repo.TopLevel); err != nil {
-		return nil, fail(ExitFailure, "could not apply all snapshot files to the working tree", "Inspect the working tree; earlier paths may already have changed.", err)
+	changed := false
+	for _, path := range remove {
+		targetPath, joinErr := secureArchivePath(repo.TopLevel, filepath.FromSlash(path))
+		if joinErr != nil {
+			if changed {
+				return nil, failChanged(ExitSafety, "refused an unsafe working-tree deletion path", "Inspect repository path names with git ls-files.", joinErr)
+			}
+			return nil, fail(ExitSafety, "refused an unsafe working-tree deletion path", "Inspect repository path names with git ls-files.", joinErr)
+		}
+		if err := os.RemoveAll(targetPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, failChanged(ExitFailure, fmt.Sprintf("could not remove %q during restore", path), "Inspect the working tree; earlier paths may already have changed.", err)
+		}
+		changed = true
 	}
+	if err := copyTree(stage, repo.TopLevel); err != nil {
+		return nil, failChanged(ExitFailure, "could not apply all snapshot files to the working tree", "Inspect the working tree; earlier paths may already have changed.", err)
+	}
+	changed = true
 	if opts.Staged {
 		if _, err := git.Run(ctx, "read-tree", "--reset", snapshot.OID); err != nil {
-			return nil, fail(ExitFailure, "working tree was restored but the real index could not be updated", "Inspect the working tree, then run git read-tree only if updating the index is still desired.", err)
+			return nil, failChanged(ExitFailure, "working tree was restored but the real index could not be updated", "Inspect the working tree, then run git read-tree only if updating the index is still desired.", err)
 		}
 	}
 	return result, nil
@@ -451,4 +406,61 @@ func listTreeEntries(ctx context.Context, git Git, oid string) (map[string]treeE
 		entries[path] = treeEntry{Path: path, Mode: fields[0]}
 	}
 	return entries, nil
+}
+
+func sortedTreePaths(entries map[string]treeEntry) []string {
+	paths := make([]string, 0, len(entries))
+	for path := range entries {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func ignoredTargetCollisions(ctx context.Context, repo *Repository, git Git, entries map[string]treeEntry) ([]string, error) {
+	var input bytes.Buffer
+	for path := range entries {
+		absolute := filepath.Join(repo.TopLevel, filepath.FromSlash(path))
+		if _, err := os.Lstat(absolute); err == nil {
+			input.WriteString(path)
+			input.WriteByte(0)
+		}
+	}
+	if input.Len() == 0 {
+		return nil, nil
+	}
+	data, err := git.RunInputBytesExit(ctx, input.Bytes(), 1, "check-ignore", "--stdin", "-z")
+	if err != nil {
+		return nil, fail(ExitFailure, "could not inspect ignored-file restore collisions", "Run git check-ignore for the target paths and retry.", err)
+	}
+	paths := splitNUL(data)
+	sort.Strings(paths)
+	return paths, nil
+}
+
+func mergePaths(groups ...[]string) []string {
+	seen := make(map[string]bool)
+	var result []string
+	for _, group := range groups {
+		for _, path := range group {
+			if !seen[path] {
+				seen[path] = true
+				result = append(result, path)
+			}
+		}
+	}
+	sort.Strings(result)
+	return result
+}
+
+func containsRepositoryMetadata(ctx context.Context, path string) bool {
+	info, err := os.Lstat(path)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	if _, err := os.Lstat(filepath.Join(path, ".git")); err == nil {
+		return true
+	}
+	metadata, err := (Git{Repo: path}).Run(ctx, "rev-parse", "--path-format=absolute", "--git-dir")
+	return err == nil && pathWithin(metadata, path)
 }

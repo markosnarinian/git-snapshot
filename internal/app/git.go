@@ -108,6 +108,19 @@ func (g Git) RunInput(ctx context.Context, input []byte, args ...string) (string
 	return strings.TrimSpace(stdout.String()), nil
 }
 
+func (g Git) RunInputBytesExit(ctx context.Context, input []byte, acceptedExit int, args ...string) ([]byte, error) {
+	var stdout, stderr bytes.Buffer
+	err := g.command(ctx, bytes.NewReader(input), &stdout, &stderr, args...).Run()
+	if err == nil {
+		return stdout.Bytes(), nil
+	}
+	gitErr := makeGitError(args, stderr.String(), err)
+	if isGitExit(gitErr, acceptedExit) {
+		return stdout.Bytes(), nil
+	}
+	return nil, gitErr
+}
+
 func (g Git) Stream(ctx context.Context, stdout io.Writer, args ...string) error {
 	var stderr bytes.Buffer
 	err := g.command(ctx, nil, stdout, &stderr, args...).Run()

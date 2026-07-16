@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -187,7 +188,7 @@ func diffWorkingTree(ctx context.Context, repo *Repository, git Git, fromOID str
 		} else {
 			args = append(args, "--patch")
 		}
-		args = append(args, "--", "/dev/null", path)
+		args = append(args, "--", os.DevNull, path)
 		piece, runErr := git.RunBytesExit(ctx, 1, args...)
 		if runErr != nil {
 			return "", fail(ExitFailure, fmt.Sprintf("could not render untracked file %q", path), "Check file permissions and retry.", runErr)

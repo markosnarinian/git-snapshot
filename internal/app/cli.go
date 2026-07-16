@@ -225,7 +225,7 @@ func (a *App) runCreate(ctx context.Context, args []string) error {
 		IncludeUntracked: common.includeUntracked, IncludeIgnored: common.includeIgnored,
 		AllowInProgress: allowInProgress, AllowDirtySubmodules: allowDirtySubmodules,
 		Sign: common.sign, SigningKey: common.signingKey, CreateReflog: common.createReflog,
-		DryRun: dryRun, LockTimeout: common.lockTimeout,
+		DryRun: dryRun, Retention: common.retention, LockTimeout: common.lockTimeout,
 	})
 	if err != nil {
 		return err
@@ -529,7 +529,7 @@ func (a *App) runDrop(ctx context.Context, args []string) error {
 			return err
 		}
 	}
-	result, err := Drop(ctx, repo, git, common.ref, common.namespace, count, common.lockTimeout, common.createReflog)
+	result, err := Drop(ctx, repo, git, common.ref, common.namespace, stream.Tip, count, common.lockTimeout, common.createReflog)
 	if err != nil {
 		return err
 	}
@@ -573,7 +573,7 @@ func (a *App) runDelete(ctx context.Context, args []string) error {
 			return err
 		}
 	}
-	result, err := Delete(ctx, repo, git, common.ref, common.namespace, common.lockTimeout)
+	result, err := Delete(ctx, repo, git, common.ref, common.namespace, stream.Tip, common.lockTimeout)
 	if err != nil {
 		return err
 	}
