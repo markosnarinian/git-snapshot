@@ -83,50 +83,50 @@ Command-specific flags: `create`: `--message`, `--message-file`, `--allow-in-pro
 
 Precedence, lowest to highest, is: built-in defaults → **explicit config file** (`--config-file` or `GIT_SNAPSHOT_CONFIG_FILE`) → global Git config → repository-local Git config → environment → command-line flags. Thus the explicit file is deliberately the lowest config layer, not an override. `--repo` bootstraps local-config discovery and, like every CLI flag, overrides environment and configured values. `config get` without a scope and `config list` show effective values; scoped `get/set/unset` use `--global`, `--local`, or `--file` (default mutation scope is local).
 
-| Git key | Environment | Default / valid values |
-|---|---|---|
-| `snapshot.repo` | `GIT_SNAPSHOT_REPO` | `.` |
-| `snapshot.ref` | `GIT_SNAPSHOT_REF` | `refs/snapshots/default` |
-| `snapshot.namespace` | `GIT_SNAPSHOT_NAMESPACE` | `refs/snapshots/` |
-| `snapshot.base` | `GIT_SNAPSHOT_BASE` | `HEAD` |
-| `snapshot.includeUntracked` | `GIT_SNAPSHOT_INCLUDE_UNTRACKED` | `true` |
-| `snapshot.includeIgnored` | `GIT_SNAPSHOT_INCLUDE_IGNORED` | `false` |
-| `snapshot.createReflog` | `GIT_SNAPSHOT_CREATE_REFLOG` | `true` |
-| `snapshot.messageTemplate` | `GIT_SNAPSHOT_MESSAGE_TEMPLATE` | `git-snapshot: {createdAt}`; also `{ref}`, `{base}` |
-| `snapshot.sign` | `GIT_SNAPSHOT_SIGN` | `false` |
-| `snapshot.signingKey` | `GIT_SNAPSHOT_SIGNING_KEY` | empty (setting it implies signing) |
-| `snapshot.outputFormat` | `GIT_SNAPSHOT_OUTPUT_FORMAT` | `human`; `human` or `json` |
-| `snapshot.color` | `GIT_SNAPSHOT_COLOR` | `auto`; `auto`, `always`, `never` |
-| `snapshot.yes` | `GIT_SNAPSHOT_YES` | `false` |
-| `snapshot.restoreDestination` | `GIT_SNAPSHOT_RESTORE_DESTINATION` | empty |
-| `snapshot.retention` | `GIT_SNAPSHOT_RETENTION` | `0` (non-negative) |
-| `snapshot.lockTimeout` | `GIT_SNAPSHOT_LOCK_TIMEOUT` | `5s` (non-negative Go duration) |
-| `snapshot.defaultCommand` | `GIT_SNAPSHOT_DEFAULT_COMMAND` | `create`; `create` or `help` |
+| Git key                       | Environment                        | Default / valid values                              |
+| ----------------------------- | ---------------------------------- | --------------------------------------------------- |
+| `snapshot.repo`               | `GIT_SNAPSHOT_REPO`                | `.`                                                 |
+| `snapshot.ref`                | `GIT_SNAPSHOT_REF`                 | `refs/snapshots/default`                            |
+| `snapshot.namespace`          | `GIT_SNAPSHOT_NAMESPACE`           | `refs/snapshots/`                                   |
+| `snapshot.base`               | `GIT_SNAPSHOT_BASE`                | `HEAD`                                              |
+| `snapshot.includeUntracked`   | `GIT_SNAPSHOT_INCLUDE_UNTRACKED`   | `true`                                              |
+| `snapshot.includeIgnored`     | `GIT_SNAPSHOT_INCLUDE_IGNORED`     | `false`                                             |
+| `snapshot.createReflog`       | `GIT_SNAPSHOT_CREATE_REFLOG`       | `true`                                              |
+| `snapshot.messageTemplate`    | `GIT_SNAPSHOT_MESSAGE_TEMPLATE`    | `git-snapshot: {createdAt}`; also `{ref}`, `{base}` |
+| `snapshot.sign`               | `GIT_SNAPSHOT_SIGN`                | `false`                                             |
+| `snapshot.signingKey`         | `GIT_SNAPSHOT_SIGNING_KEY`         | empty (setting it implies signing)                  |
+| `snapshot.outputFormat`       | `GIT_SNAPSHOT_OUTPUT_FORMAT`       | `human`; `human` or `json`                          |
+| `snapshot.color`              | `GIT_SNAPSHOT_COLOR`               | `auto`; `auto`, `always`, `never`                   |
+| `snapshot.yes`                | `GIT_SNAPSHOT_YES`                 | `false`                                             |
+| `snapshot.restoreDestination` | `GIT_SNAPSHOT_RESTORE_DESTINATION` | empty                                               |
+| `snapshot.retention`          | `GIT_SNAPSHOT_RETENTION`           | `0` (non-negative)                                  |
+| `snapshot.lockTimeout`        | `GIT_SNAPSHOT_LOCK_TIMEOUT`        | `5s` (non-negative Go duration)                     |
+| `snapshot.defaultCommand`     | `GIT_SNAPSHOT_DEFAULT_COMMAND`     | `create`; `create` or `help`                        |
 
 Boolean config/environment values use Go boolean syntax accepted by `strconv.ParseBool`; config validation messages recommend `true`/`false`. `GIT_SNAPSHOT_CONFIG_FILE` selects the explicit file and is not a Git key.
 
 ## Exit codes
 
-| Code | Meaning |
-|---:|---|
-| 0 | success |
-| 1 | operational/unclassified failure |
-| 2 | usage or invalid configuration |
-| 3 | safety refusal or cancelled confirmation |
-| 4 | repository/ref/object/selector/config value not found |
-| 5 | lock or concurrent ref update |
-| 6 | ownership, metadata, object, or stream verification failure |
+| Code | Meaning                                                     |
+| ---: | ----------------------------------------------------------- |
+|    0 | success                                                     |
+|    1 | operational/unclassified failure                            |
+|    2 | usage or invalid configuration                              |
+|    3 | safety refusal or cancelled confirmation                    |
+|    4 | repository/ref/object/selector/config value not found       |
+|    5 | lock or concurrent ref update                               |
+|    6 | ownership, metadata, object, or stream verification failure |
 
 Errors state whether anything may have changed. `--json`/JSON output mode emits structured errors where detectable from arguments/environment.
 
 ## Threat model and limitations
 
-* **Data loss:** default capture is non-destructive; destination restore is preferred. Worktree restore is intentionally destructive only behind `--worktree`, preview, cleanliness checks, `--force`, and confirmation. Filesystem failure is not transactional and backups remain the user's responsibility.
-* **Ref clobber:** protected namespaces, namespace containment, direct-ref checks, ownership verification, expected-old-value CAS, and lock retries defend against accidental/adversarial ref movement. A process with repository write access can still modify refs/objects outside this program.
-* **Concurrency:** known lock files are refused and ref changes are CAS-protected. The working tree can still change while capture/restore runs; no global filesystem transaction or lock can prevent another process editing files.
-* **Untrusted config:** Git config and environment control repository/ref, signing, restore defaults, inclusion, and confirmations. Do not run with attacker-controlled config/environment; inspect `config list --show-origin`. Git hooks are not used directly, but Git configuration and signing programs remain part of Git's trust boundary.
-* **Nested repositories/submodules:** untracked embedded repositories are refused during capture; dirty submodules are refused unless only their gitlink commits are explicitly accepted. Worktree restore refuses deleting nested repository metadata. Snapshot nested repositories separately; a gitlink does not contain a submodule's dirty files.
-* **Secrets:** ignored files are not a security boundary once `--include-ignored` is selected. Written objects may persist after refs are removed.
+- **Data loss:** default capture is non-destructive; destination restore is preferred. Worktree restore is intentionally destructive only behind `--worktree`, preview, cleanliness checks, `--force`, and confirmation. Filesystem failure is not transactional and backups remain the user's responsibility.
+- **Ref clobber:** protected namespaces, namespace containment, direct-ref checks, ownership verification, expected-old-value CAS, and lock retries defend against accidental/adversarial ref movement. A process with repository write access can still modify refs/objects outside this program.
+- **Concurrency:** known lock files are refused and ref changes are CAS-protected. The working tree can still change while capture/restore runs; no global filesystem transaction or lock can prevent another process editing files.
+- **Untrusted config:** Git config and environment control repository/ref, signing, restore defaults, inclusion, and confirmations. Do not run with attacker-controlled config/environment; inspect `config list --show-origin`. Git hooks are not used directly, but Git configuration and signing programs remain part of Git's trust boundary.
+- **Nested repositories/submodules:** untracked embedded repositories are refused during capture; dirty submodules are refused unless only their gitlink commits are explicitly accepted. Worktree restore refuses deleting nested repository metadata. Snapshot nested repositories separately; a gitlink does not contain a submodule's dirty files.
+- **Secrets:** ignored files are not a security boundary once `--include-ignored` is selected. Written objects may persist after refs are removed.
 
 ## Development and reproducible releases
 
@@ -144,3 +144,7 @@ $env:CGO_ENABLED=0; go build -trimpath -ldflags "-s -w -X github.com/markos-nari
 ```
 
 Without `VERSION`, Make uses `git describe --tags --always --dirty`, falling back to `dev`.
+
+## License
+
+[MIT](LICENSE)
