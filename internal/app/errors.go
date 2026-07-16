@@ -39,7 +39,7 @@ func fail(code int, message, hint string, cause error) error {
 	return &ExitError{Code: code, Message: message, Hint: hint, Cause: cause}
 }
 
-func exitCode(err error) int {
+func ExitCode(err error) int {
 	if err == nil {
 		return ExitOK
 	}

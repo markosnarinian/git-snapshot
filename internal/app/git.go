@@ -57,7 +57,15 @@ func (g Git) command(ctx context.Context, input io.Reader, stdout, stderr io.Wri
 	cmd.Stdin = input
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	cmd.Env = mergeEnv(os.Environ(), g.Env)
+	environment := make(map[string]string, len(g.Env)+1)
+	// Read-only Git commands may otherwise refresh and rewrite the real index.
+	// Required locks (update-ref, read-tree, alternate-index writes) are not
+	// disabled by GIT_OPTIONAL_LOCKS=0.
+	environment["GIT_OPTIONAL_LOCKS"] = "0"
+	for key, value := range g.Env {
+		environment[key] = value
+	}
+	cmd.Env = mergeEnv(os.Environ(), environment)
 	return cmd
 }
 
@@ -73,6 +81,22 @@ func (g Git) RunBytes(ctx context.Context, args ...string) ([]byte, error) {
 		return nil, makeGitError(args, stderr.String(), err)
 	}
 	return stdout.Bytes(), nil
+}
+
+// RunBytesExit returns stdout when Git succeeds or exits with one of the
+// explicitly accepted nonzero statuses. This is useful for read-only commands
+// such as git diff --no-index, where status 1 means "different", not failure.
+func (g Git) RunBytesExit(ctx context.Context, acceptedExit int, args ...string) ([]byte, error) {
+	var stdout, stderr bytes.Buffer
+	err := g.command(ctx, nil, &stdout, &stderr, args...).Run()
+	if err == nil {
+		return stdout.Bytes(), nil
+	}
+	gitErr := makeGitError(args, stderr.String(), err)
+	if isGitExit(gitErr, acceptedExit) {
+		return stdout.Bytes(), nil
+	}
+	return nil, gitErr
 }
 
 func (g Git) RunInput(ctx context.Context, input []byte, args ...string) (string, error) {
