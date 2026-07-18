@@ -25,6 +25,9 @@ func TestMain(m *testing.M) {
 	}
 	_ = global.Close()
 	_ = os.Setenv("GIT_CONFIG_GLOBAL", global.Name())
+	// Also mask the system scope: Windows CI runners set core.autocrlf=true
+	// there, which would break byte-exact restore assertions.
+	_ = os.Setenv("GIT_CONFIG_SYSTEM", global.Name())
 	code := m.Run()
 	_ = os.Remove(global.Name())
 	os.Exit(code)
@@ -83,10 +86,10 @@ func TestCreateCapturesMixedStateWithoutMutatingRepository(t *testing.T) {
 	assertMissingPath(t, repoPath, result.OID, "deleted.txt")
 	assertMissingPath(t, repoPath, result.OID, "run.sh")
 	assertMissingPath(t, repoPath, result.OID, "secret.env")
-	if mode := treeMode(t, repoPath, result.OID, "moved.sh"); mode != "100755" {
-		t.Fatalf("executable mode = %s", mode)
-	}
 	if runtime.GOOS != "windows" {
+		if mode := treeMode(t, repoPath, result.OID, "moved.sh"); mode != "100755" {
+			t.Fatalf("executable mode = %s", mode)
+		}
 		if mode := treeMode(t, repoPath, result.OID, "link"); mode != "120000" {
 			t.Fatalf("symlink mode = %s", mode)
 		}
