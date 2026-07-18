@@ -10,6 +10,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      DIST_DIR: ${{ runner.temp }}/dist
     steps:
       - uses: actions/checkout@v5
         with:
@@ -26,28 +28,28 @@ jobs:
       - name: Cross-compile static binaries
         run: |
           set -euo pipefail
-          mkdir -p dist
+          mkdir -p "$DIST_DIR"
           version="${GITHUB_REF_NAME}"
           for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
             goos="${target%/*}" goarch="${target#*/}"
             ext=""; [ "$goos" = windows ] && ext=".exe"
             GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 \
               go build -trimpath -ldflags '-s -w' \
-              -o "dist/git-snapshot-${version}-${goos}-${goarch}${ext}" ./cmd/git-snapshot
+              -o "$DIST_DIR/git-snapshot-${version}-${goos}-${goarch}${ext}" ./cmd/git-snapshot
           done
       - name: Verify embedded version
         run: |
           set -euo pipefail
-          out="$(./dist/git-snapshot-${GITHUB_REF_NAME}-linux-amd64 --version)"
+          out="$("$DIST_DIR/git-snapshot-${GITHUB_REF_NAME}-linux-amd64" --version)"
           echo "$out"
           [ "$out" = "git-snapshot ${GITHUB_REF_NAME}" ]
       - name: Checksums
-        run: cd dist && sha256sum * > SHA256SUMS
+        run: cd "$DIST_DIR" && sha256sum * > SHA256SUMS
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
+          gh release create "$GITHUB_REF_NAME" "$DIST_DIR"/* \
             --title "$GITHUB_REF_NAME" --generate-notes
       - name: Trigger Go module proxy indexing
         run: |
