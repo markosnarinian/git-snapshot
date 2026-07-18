@@ -4,22 +4,15 @@
 
 ## Install
 
-With Go 1.22+ installed, install the latest release directly:
+With Go 1.22+ installed:
 
 ```sh
 go install github.com/markosnarinian/git-snapshot/cmd/git-snapshot@latest
 ```
 
-This places `git-snapshot` in `$(go env GOPATH)/bin` (or `$GOBIN`); make sure that directory is on `PATH` so that both `git-snapshot` and `git snapshot` work. Binaries installed this way report the module version from `git snapshot version` (release builds instead inject the version via ldflags).
+This places `git-snapshot` in `$(go env GOPATH)/bin` (or `$GOBIN`); make sure that directory is on `PATH`. `git snapshot version` reports the installed module version.
 
-Alternatively, build from a checkout:
-
-```sh
-make build                         # bin/git-snapshot
-sudo make install PREFIX=/usr/local
-```
-
-The executable works standalone (`git-snapshot create`). Because Git maps `git snapshot …` to an executable named `git-snapshot` on `PATH`, the same installation enables the external-command form (`git snapshot create`). To install manually, copy `bin/git-snapshot` to a `PATH` directory. Optional completion files are under `completions/`; the man page is `man/git-snapshot.1`.
+The executable works standalone (`git-snapshot create`). Because Git maps `git snapshot …` to an executable named `git-snapshot` on `PATH`, the same installation enables the external-command form (`git snapshot create`). For a machine without Go, cross-compile a static binary (`GOOS=… GOARCH=… CGO_ENABLED=0 go build ./cmd/git-snapshot`) and copy it to a `PATH` directory. Optional completion files are under `completions/`; the man page is `man/git-snapshot.1`. Copy them manually to your shell's completion directory and manpath if wanted.
 
 ## Design and architecture
 
@@ -138,22 +131,16 @@ Errors state whether anything may have changed. `--json`/JSON output mode emits 
 - **Nested repositories/submodules:** untracked embedded repositories are refused during capture; dirty submodules are refused unless only their gitlink commits are explicitly accepted. Worktree restore refuses deleting nested repository metadata. Snapshot nested repositories separately; a gitlink does not contain a submodule's dirty files.
 - **Secrets:** ignored files are not a security boundary once `--include-ignored` is selected. Written objects may persist after refs are removed.
 
-## Development and reproducible releases
+## Development and releases
 
 ```sh
-make test
-make test-race
-make vet
-make check
+go build ./...
+go vet ./...
+go test ./...
+go test -race ./...
 ```
 
-`make release VERSION=v1.2.3` cross-compiles static (`CGO_ENABLED=0`) macOS, Linux, and Windows binaries for amd64/arm64 into `dist/`, injects `app.Version`, uses `-trimpath`, and writes `SHA256SUMS`. For reproducibility, use the same Go toolchain (Go 1.22 or pinned newer version), clean checkout, Git version, source revision/tag, `VERSION`, and environment; Go's build ID is deterministic for identical inputs. Run on macOS, Linux, or Windows with Go, Git, `make`, a POSIX shell, and `shasum`; on Windows use WSL/MSYS2/Git Bash. Individual native Windows build:
-
-```powershell
-$env:CGO_ENABLED=0; go build -trimpath -ldflags "-s -w -X github.com/markosnarinian/git-snapshot/internal/app.Version=v1.2.3" -o dist/git-snapshot-v1.2.3-windows-amd64.exe ./cmd/git-snapshot
-```
-
-Without `VERSION`, Make uses `git describe --tags --always --dirty`, falling back to `dev`.
+Releases are Git tags: push a semver tag (e.g. `v1.2.3`) and `go install …@latest` (or `@v1.2.3`) builds it from source on the user's machine, embedding that version in `git snapshot version`. No binary artifacts are published; builds are static (no cgo), and `go build -trimpath` with the same Go toolchain and source revision produces deterministic binaries for anyone who wants to distribute one.
 
 ## License
 

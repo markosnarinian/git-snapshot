@@ -16,18 +16,13 @@ import (
 	"time"
 )
 
-var Version = "dev"
-
-// version returns the ldflags-injected Version, falling back to the module
-// version embedded by `go install module@version` builds.
+// version returns the module version embedded by `go install module@version`
+// builds, or "dev" for source-tree builds where none is recorded.
 func version() string {
-	if Version != "dev" {
-		return Version
-	}
 	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
 		return info.Main.Version
 	}
-	return Version
+	return "dev"
 }
 
 type App struct {
