@@ -1,5 +1,8 @@
 # git-snapshot
 
+[![CI](https://github.com/markosnarinian/git-snapshot/actions/workflows/ci.yml/badge.svg)](https://github.com/markosnarinian/git-snapshot/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/markosnarinian/git-snapshot.svg)](https://pkg.go.dev/github.com/markosnarinian/git-snapshot)
+
 `git-snapshot` captures the current working-tree state in a dedicated Git ref, without adding commits to branch history or changing the real index. It requires Go 1.22+ to build and a working `git` executable at runtime.
 
 ## Install
@@ -12,7 +15,7 @@ go install github.com/markosnarinian/git-snapshot/cmd/git-snapshot@latest
 
 This places `git-snapshot` in `$(go env GOPATH)/bin` (or `$GOBIN`); make sure that directory is on `PATH`. `git snapshot version` reports the installed module version.
 
-The executable works standalone (`git-snapshot create`). Because Git maps `git snapshot …` to an executable named `git-snapshot` on `PATH`, the same installation enables the external-command form (`git snapshot create`). For a machine without Go, cross-compile a static binary (`GOOS=… GOARCH=… CGO_ENABLED=0 go build ./cmd/git-snapshot`) and copy it to a `PATH` directory. Optional completion files are under `completions/`; the man page is `man/git-snapshot.1`. Copy them manually to your shell's completion directory and manpath if wanted.
+The executable works standalone (`git-snapshot create`). Because Git maps `git snapshot …` to an executable named `git-snapshot` on `PATH`, the same installation enables the external-command form (`git snapshot create`). For a machine without Go, download a static pre-built binary for macOS, Linux, or Windows (amd64/arm64) from [GitHub Releases](https://github.com/markosnarinian/git-snapshot/releases) — checksums are in `SHA256SUMS` — and copy it to a `PATH` directory. Optional completion files are under `completions/`; the man page is `man/git-snapshot.1`. Copy them manually to your shell's completion directory and manpath if wanted.
 
 ## Design and architecture
 
@@ -140,7 +143,7 @@ go test ./...
 go test -race ./...
 ```
 
-Releases are Git tags: push a semver tag (e.g. `v1.2.3`) and `go install …@latest` (or `@v1.2.3`) builds it from source on the user's machine, embedding that version in `git snapshot version`. No binary artifacts are published; builds are static (no cgo), and `go build -trimpath` with the same Go toolchain and source revision produces deterministic binaries for anyone who wants to distribute one.
+CI (`.github/workflows/ci.yml`) runs vet, build, and race tests on Linux, macOS, and Windows for every push and pull request. Releases are Git tags: pushing a semver tag (e.g. `v1.2.3`) triggers `.github/workflows/release.yml`, which tests, cross-compiles static (`CGO_ENABLED=0`, `-trimpath`) macOS/Linux/Windows binaries for amd64/arm64, publishes them with `SHA256SUMS` as a GitHub release, and pings the Go module proxy so the version appears on [pkg.go.dev](https://pkg.go.dev/github.com/markosnarinian/git-snapshot). The Go toolchain stamps the tag as the module version, so both `go install …@v1.2.3` builds and released binaries report it in `git snapshot version`.
 
 ## License
 
