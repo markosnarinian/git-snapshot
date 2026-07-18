@@ -1,3 +1,3 @@
-module github.com/markos-narinin/git-snapshot
+module github.com/markosnarinian/git-snapshot
 
 go 1.22

@@ -1,7 +1,7 @@
 GO ?= go
 PREFIX ?= /usr/local
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X github.com/markos-narinin/git-snapshot/internal/app.Version=$(VERSION)
+LDFLAGS := -s -w -X github.com/markosnarinian/git-snapshot/internal/app.Version=$(VERSION)
 BINARY := git-snapshot
 
 .PHONY: build test test-race vet check install clean release

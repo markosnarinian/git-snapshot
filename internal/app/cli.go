@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +17,18 @@ import (
 )
 
 var Version = "dev"
+
+// version returns the ldflags-injected Version, falling back to the module
+// version embedded by `go install module@version` builds.
+func version() string {
+	if Version != "dev" {
+		return Version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return Version
+}
 
 type App struct {
 	In  io.Reader
@@ -52,7 +65,7 @@ type commonFlags struct {
 
 func (a *App) Run(ctx context.Context, args []string) error {
 	if len(args) > 0 && (args[0] == "--version" || args[0] == "version") {
-		fmt.Fprintf(a.Out, "git-snapshot %s\n", Version)
+		fmt.Fprintf(a.Out, "git-snapshot %s\n", version())
 		return nil
 	}
 	command := ""

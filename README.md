@@ -4,6 +4,16 @@
 
 ## Install
 
+With Go 1.22+ installed, install the latest release directly:
+
+```sh
+go install github.com/markosnarinian/git-snapshot/cmd/git-snapshot@latest
+```
+
+This places `git-snapshot` in `$(go env GOPATH)/bin` (or `$GOBIN`); make sure that directory is on `PATH` so that both `git-snapshot` and `git snapshot` work. Binaries installed this way report the module version from `git snapshot version` (release builds instead inject the version via ldflags).
+
+Alternatively, build from a checkout:
+
 ```sh
 make build                         # bin/git-snapshot
 sudo make install PREFIX=/usr/local
@@ -140,7 +150,7 @@ make check
 `make release VERSION=v1.2.3` cross-compiles static (`CGO_ENABLED=0`) macOS, Linux, and Windows binaries for amd64/arm64 into `dist/`, injects `app.Version`, uses `-trimpath`, and writes `SHA256SUMS`. For reproducibility, use the same Go toolchain (Go 1.22 or pinned newer version), clean checkout, Git version, source revision/tag, `VERSION`, and environment; Go's build ID is deterministic for identical inputs. Run on macOS, Linux, or Windows with Go, Git, `make`, a POSIX shell, and `shasum`; on Windows use WSL/MSYS2/Git Bash. Individual native Windows build:
 
 ```powershell
-$env:CGO_ENABLED=0; go build -trimpath -ldflags "-s -w -X github.com/markos-narinin/git-snapshot/internal/app.Version=v1.2.3" -o dist/git-snapshot-v1.2.3-windows-amd64.exe ./cmd/git-snapshot
+$env:CGO_ENABLED=0; go build -trimpath -ldflags "-s -w -X github.com/markosnarinian/git-snapshot/internal/app.Version=v1.2.3" -o dist/git-snapshot-v1.2.3-windows-amd64.exe ./cmd/git-snapshot
 ```
 
 Without `VERSION`, Make uses `git describe --tags --always --dirty`, falling back to `dev`.

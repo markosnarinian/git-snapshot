@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/markos-narinin/git-snapshot/internal/app"
+	"github.com/markosnarinian/git-snapshot/internal/app"
 )
 
 func main() {
